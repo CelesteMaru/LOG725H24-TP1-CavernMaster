@@ -1,6 +1,12 @@
 from random import choice, randint, random, shuffle
 from enum import Enum
 import pygame, pgzero, pgzrun, sys
+from CollectibleManagerSystem import CollectibleManagerSystem
+from Pop import Pop
+from CollideActor import CollideActor
+from GravityActor import GravityActor
+from constraints import *
+
 
 # Check Python version number. sys.version_info gives version as a tuple, e.g. if (3,7,2,'final',0) for version 3.7.2.
 # Unlike many languages, Python can compare two tuples in the same way that you can compare numbers.
@@ -18,49 +24,6 @@ if pgzero_version < [1,2]:
     print("This game requires at least version 1.2 of Pygame Zero. You have version {0}. Please upgrade using the command 'pip3 install --upgrade pgzero'".format(pgzero.__version__))
     sys.exit()
 
-# Set up constants
-WIDTH = 800
-HEIGHT = 480
-TITLE = "Cavern"
-
-NUM_ROWS = 18
-NUM_COLUMNS = 28
-
-LEVEL_X_OFFSET = 50
-GRID_BLOCK_SIZE = 25
-
-ANCHOR_CENTRE = ("center", "center")
-ANCHOR_CENTRE_BOTTOM = ("center", "bottom")
-
-LEVELS = [ ["XXXXX     XXXXXXXX     XXXXX",
-            "","","","",
-            "   XXXXXXX        XXXXXXX   ",
-            "","","",
-            "   XXXXXXXXXXXXXXXXXXXXXX   ",
-            "","","",
-            "XXXXXXXXX          XXXXXXXXX",
-            "","",""],
-
-           ["XXXX    XXXXXXXXXXXX    XXXX",
-            "","","","",
-            "    XXXXXXXXXXXXXXXXXXXX    ",
-            "","","",
-            "XXXXXX                XXXXXX",
-            "      X              X      ",
-            "       X            X       ",
-            "        X          X        ",
-            "         X        X         ",
-            "","",""],
-
-           ["XXXX    XXXX    XXXX    XXXX",
-            "","","","",
-            "  XXXXXXXX        XXXXXXXX  ",
-            "","","",
-            "XXXX      XXXXXXXX      XXXX",
-            "","","",
-            "    XXXXXX        XXXXXX    ",
-            "","",""]]
-
 def block(x,y):
     # Is there a level grid block at these coordinates?
     grid_x = (x - LEVEL_X_OFFSET) // GRID_BLOCK_SIZE
@@ -75,45 +38,6 @@ def sign(x):
     # Returns -1 or 1 depending on whether number is positive or negative
     return -1 if x < 0 else 1
 
-class CollideActor(Actor):
-    def __init__(self, pos, anchor=ANCHOR_CENTRE):
-        super().__init__("blank", pos, anchor)
-
-    def move(self, dx, dy, speed):
-        new_x, new_y = int(self.x), int(self.y)
-
-        # Movement is done 1 pixel at a time, which ensures we don't get embedded into a wall we're moving towards
-        for i in range(speed):
-            new_x, new_y = new_x + dx, new_y + dy
-
-            if new_x < 70 or new_x > 730:
-                # Collided with edge of level
-                return True
-
-            # Normally you don't need brackets surrounding the condition for an if statement (unlike many other
-            # languages), but in the case where the condition is split into multiple lines, using brackets removes
-            # the need to use the \ symbol at the end of each line.
-            # The code below checks to see if we're position we're trying to move into overlaps with a block. We only
-            # need to check the direction we're actually moving in. So first, we check to see if we're moving down
-            # (dy > 0). If that's the case, we then check to see if the proposed new y coordinate is a multiple of
-            # GRID_BLOCK_SIZE. If it is, that means we're directly on top of a place where a block might be. If that's
-            # also true, we then check to see if there is actually a block at the given position. If there's a block
-            # there, we return True and don't update the object to the new position.
-            # For movement to the right, it's the same except we check to ensure that the new x coordinate is a multiple
-            # of GRID_BLOCK_SIZE. For moving left, we check to see if the new x coordinate is the last (right-most)
-            # pixel of a grid block.
-            # Note that we don't check for collisions when the player is moving up.
-            if ((dy > 0 and new_y % GRID_BLOCK_SIZE == 0 or
-                 dx > 0 and new_x % GRID_BLOCK_SIZE == 0 or
-                 dx < 0 and new_x % GRID_BLOCK_SIZE == GRID_BLOCK_SIZE-1)
-                and block(new_x, new_y)):
-                    return True
-
-            # We only update the object's position if there wasn't a block there.
-            self.pos = new_x, new_y
-
-        # Didn't collide with block or edge of level
-        return False
 
 class Orb(CollideActor):
     MAX_TIMER = 250
@@ -140,10 +64,10 @@ class Orb(CollideActor):
 
         if self.floating:
             # Float upwards
-            self.move(0, -1, randint(1, 2))
+            self.move(0, -1, randint(1, 2), game)
         else:
             # Move horizontally
-            if self.move(self.direction_x, 0, 4):
+            if self.move(self.direction_x, 0, 4, game):
                 # If we hit a block, start floating
                 self.floating = True
 
@@ -155,7 +79,7 @@ class Orb(CollideActor):
             if self.trapped_enemy_type != None:
                 # trapped_enemy_type is either zero or one. A value of one means there's a chance of creating a
                 # powerup such as an extra life or extra health
-                game.fruits.append(Fruit(self.pos, self.trapped_enemy_type))
+                game.collectibleManagerSystem.collectibleDropOnEnenmyDeath(self.pos, self.trapped_enemy_type)
             game.play_sound("pop", 4)
 
         if self.timer < 9:
@@ -178,7 +102,7 @@ class Bolt(CollideActor):
 
     def update(self):
         # Move horizontally and check to see if we've collided with a block
-        if self.move(self.direction_x, 0, Bolt.SPEED):
+        if self.move(self.direction_x, 0, Bolt.SPEED, game):
             # Collided
             self.active = False
         else:
@@ -192,100 +116,8 @@ class Bolt(CollideActor):
         anim_frame = str((game.timer // 4) % 2)
         self.image = "bolt" + direction_idx + anim_frame
 
-class Pop(Actor):
-    def __init__(self, pos, type):
-        super().__init__("blank", pos)
 
-        self.type = type
-        self.timer = -1
 
-    def update(self):
-        self.timer += 1
-        self.image = "pop" + str(self.type) + str(self.timer // 2)
-
-class GravityActor(CollideActor):
-    MAX_FALL_SPEED = 10
-
-    def __init__(self, pos):
-        super().__init__(pos, ANCHOR_CENTRE_BOTTOM)
-
-        self.vel_y = 0
-        self.landed = False
-
-    def update(self, detect=True):
-        # Apply gravity, without going over the maximum fall speed
-        self.vel_y = min(self.vel_y + 1, GravityActor.MAX_FALL_SPEED)
-
-        # The detect parameter indicates whether we should check for collisions with blocks as we fall. Normally we
-        # want this to be the case - hence why this parameter is optional, and is True by default. If the player is
-        # in the process of losing a life, however, we want them to just fall out of the level, so False is passed
-        # in this case.
-        if detect:
-            # Move vertically in the appropriate direction, at the appropriate speed
-            if self.move(0, sign(self.vel_y), abs(self.vel_y)):
-                # If move returned True, we must have landed on a block.
-                # Note that move doesn't apply any collision detection when the player is moving up - only down
-                self.vel_y = 0
-                self.landed = True
-
-            if self.top >= HEIGHT:
-                # Fallen off bottom - reappear at top
-                self.y = 1
-        else:
-            # Collision detection disabled - just update the Y coordinate without any further checks
-            self.y += self.vel_y
-
-# Class for pickups including fruit, extra health and extra life
-class Fruit(GravityActor):
-    APPLE = 0
-    RASPBERRY = 1
-    LEMON = 2
-    EXTRA_HEALTH = 3
-    EXTRA_LIFE = 4
-
-    def __init__(self, pos, trapped_enemy_type=0):
-        super().__init__(pos)
-
-        # Choose which type of fruit we're going to be.
-        if trapped_enemy_type == Robot.TYPE_NORMAL:
-            self.type = choice([Fruit.APPLE, Fruit.RASPBERRY, Fruit.LEMON])
-        else:
-            # If trapped_enemy_type is 1, it means this fruit came from bursting an orb containing the more dangerous type
-            # of enemy. In this case there is a chance of getting an extra help or extra life power up
-            # We create a list containing the possible types of fruit, in proportions based on the probability we want
-            # each type of fruit to be chosen
-            types = 10 * [Fruit.APPLE, Fruit.RASPBERRY, Fruit.LEMON]    # Each of these appear in the list 10 times
-            types += 9 * [Fruit.EXTRA_HEALTH]                           # This appears 9 times
-            types += [Fruit.EXTRA_LIFE]                                 # This only appears once
-            self.type = choice(types)                                   # Randomly choose one from the list
-
-        self.time_to_live = 500 # Counts down to zero
-
-    def update(self):
-        super().update()
-
-        # Does the player exist, and are they colliding with us?
-        if game.player and game.player.collidepoint(self.center):
-            if self.type == Fruit.EXTRA_HEALTH:
-                game.player.health = min(3, game.player.health + 1)
-                game.play_sound("bonus")
-            elif self.type == Fruit.EXTRA_LIFE:
-                game.player.lives += 1
-                game.play_sound("bonus")
-            else:
-                game.player.score += (self.type + 1) * 100
-                game.play_sound("score")
-
-            self.time_to_live = 0   # Disappear
-        else:
-            self.time_to_live -= 1
-
-        if self.time_to_live <= 0:
-            # Create 'pop' animation
-            game.pops.append(Pop((self.x, self.y - 27), 0))
-
-        anim_frame = str([0, 1, 2, 1][(game.timer // 6) % 4])
-        self.image = "fruit" + str(self.type) + anim_frame
 
 class Player(GravityActor):
     def __init__(self):
@@ -324,10 +156,10 @@ class Player(GravityActor):
         else:
             return False
 
-    def update(self):
+    def update(self,game):
         # Call GravityActor.update - parameter is whether we want to perform collision detection as we fall. If health
         # is zero, we want the player to just fall out of the level
-        super().update(self.health > 0)
+        super().update(game, self.health > 0)
 
         self.fire_timer -= 1
         self.hurt_timer -= 1
@@ -343,7 +175,7 @@ class Player(GravityActor):
             # plus 50%, rather than simply the screen height, because the former effectively gives us a short delay
             # before the player respawns.
             if self.health > 0:
-                self.move(self.direction_x, 0, 4)
+                self.move(self.direction_x, 0, 4, game)
             else:
                 if self.top >= HEIGHT*1.5:
                     self.lives -= 1
@@ -362,7 +194,7 @@ class Player(GravityActor):
 
                 # If we haven't just fired an orb, carry out horizontal movement
                 if self.fire_timer < 10:
-                    self.move(dx, 0, 4)
+                    self.move(dx, 0, 4, game)
 
             # Do we need to create a new orb? Space must have been pressed and released, the minimum time between
             # orbs must have passed, and there is a limit of 5 orbs.
@@ -426,14 +258,14 @@ class Robot(GravityActor):
         self.change_dir_timer = 0
         self.fire_timer = 100
 
-    def update(self):
-        super().update()
+    def update(self,game):
+        super().update(game)
 
         self.change_dir_timer -= 1
         self.fire_timer += 1
 
         # Move in current direction - turn around if we hit a wall
-        if self.move(self.direction_x, 0, self.speed):
+        if self.move(self.direction_x, 0, self.speed, game):
             self.change_dir_timer = 0
 
         if self.change_dir_timer <= 0:
@@ -525,7 +357,7 @@ class Game:
         if self.player:
             self.player.reset()
 
-        self.fruits = []
+        self.collectibleManagerSystem = CollectibleManagerSystem()
         self.bolts = []
         self.enemies = []
         self.pops = []
@@ -571,13 +403,15 @@ class Game:
         self.timer += 1
 
         # Update all objects
-        for obj in self.fruits + self.bolts + self.enemies + self.pops + [self.player] + self.orbs:
+        for obj in self.enemies + [self.player]:
+            if obj:
+                obj.update(game)
+        for obj in self.bolts +  self.pops  + self.orbs:
             if obj:
                 obj.update()
+        self.collectibleManagerSystem.updateCollectibles(game)
 
         # Use list comprehensions to remove objects which are no longer wanted from the lists. For example, we recreate
-        # self.fruits such that it contains all existing fruits except those whose time_to_live counter has reached zero
-        self.fruits = [f for f in self.fruits if f.time_to_live > 0]
         self.bolts = [b for b in self.bolts if b.active]
         self.enemies = [e for e in self.enemies if e.alive]
         self.pops = [p for p in self.pops if p.timer < 12]
@@ -586,7 +420,7 @@ class Game:
         # Every 100 frames, create a random fruit (unless there are no remaining enemies on this level)
         if self.timer % 100 == 0 and len(self.pending_enemies + self.enemies) > 0:
             # Create fruit at random position
-            self.fruits.append(Fruit((randint(70, 730), randint(75, 400))))
+            self.collectibleManagerSystem.timedFruitDrop()
 
         # Every 81 frames, if there is at least 1 pending enemy, and the number of active enemies is below the current
         # level's maximum enemies, create a robot
@@ -599,7 +433,7 @@ class Game:
         # End level if there are no enemies remaining to be created, no existing enemies, no fruit, no popping orbs,
         # and no orbs containing trapped enemies. (We don't want to include orbs which don't contain trapped enemies,
         # as the level would never end if the player kept firing new orbs)
-        if len(self.pending_enemies + self.fruits + self.enemies + self.pops) == 0:
+        if len(self.pending_enemies + self.enemies + self.pops)+ self.collectibleManagerSystem.collectiblesandpopLength() == 0:
             if len([orb for orb in self.orbs if orb.trapped_enemy_type != None]) == 0:
                 self.next_level()
 
@@ -621,11 +455,12 @@ class Game:
                     x += GRID_BLOCK_SIZE
 
         # Draw all objects
-        all_objs = self.fruits + self.bolts + self.enemies + self.pops + self.orbs
+        all_objs = self.bolts + self.enemies + self.pops + self.orbs
         all_objs.append(self.player)
         for obj in all_objs:
             if obj:
                 obj.draw()
+        self.collectibleManagerSystem.drawCollectiblesAndPops()
 
     def play_sound(self, name, count=1):
         # Some sounds have multiple varieties. If count > 1, we'll randomly choose one from those
