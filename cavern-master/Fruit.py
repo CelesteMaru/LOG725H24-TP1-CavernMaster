@@ -6,13 +6,13 @@ from GravityActor import GravityActor
 
 
 # Class for pickups including fruit, extra health and extra life
-class Fruit(GravityActor):
+class Fruit():
     APPLE = 0
     RASPBERRY = 1
     LEMON = 2
 
     def __init__(self, pos, time_to_live=500):
-        super().__init__(pos)
+        self.gravityActor = GravityActor(pos)
 
         # Choose which type of fruit we're going to be.
         self.type = choice([Fruit.APPLE, Fruit.RASPBERRY, Fruit.LEMON])
@@ -27,7 +27,7 @@ class Fruit(GravityActor):
 
     def update(self,game):
         #gravity
-        super().update(game)
+        self.gravityActor.update(game)
 
 
         #animation

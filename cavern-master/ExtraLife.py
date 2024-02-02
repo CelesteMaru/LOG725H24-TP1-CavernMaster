@@ -2,10 +2,10 @@ from random import choice, randint, random, shuffle
 from enum import Enum
 from GravityActor import GravityActor
 
-class ExtraLife(GravityActor):
+class ExtraLife():
 
     def __init__(self, pos, time_to_live):
-        super().__init__(pos)
+        self.gravityActor = GravityActor(pos)
         
         self.time_to_live = time_to_live # Counts down to zero
         self.frame = 0
@@ -16,7 +16,7 @@ class ExtraLife(GravityActor):
 
     def update(self,game):
         #gravity
-        super().update(game)
+        self.gravityActor.update(game)
 
 
         #animation

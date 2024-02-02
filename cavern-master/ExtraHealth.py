@@ -1,14 +1,14 @@
 from random import choice, randint, random, shuffle
 from enum import Enum
 from GravityActor import GravityActor
-class ExtraHealth(GravityActor):
+class ExtraHealth():
 
 
     def __init__(self, pos, time_to_live):
-        super().__init__(pos)
         
         self.time_to_live = time_to_live # Counts down to zero
         self.frame = 0
+        self.gravityActor = GravityActor(pos)
 
     def collected(self, game):
         game.player.health = min(3, game.player.health + 1)
@@ -16,7 +16,7 @@ class ExtraHealth(GravityActor):
 
     def update(self,game):
         #gravity
-        super().update(game)
+        self.gravityActor.update(game)
 
 
         #animation
